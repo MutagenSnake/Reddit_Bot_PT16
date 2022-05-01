@@ -5,8 +5,20 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 import praw
 import webbrowser
-from subprocess import Popen
 import subprocess
+import logging
+
+''' Logger '''
+
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('Log.log')
+logger.addHandler(file_handler)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+file_handler.setFormatter(formatter)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
 
 ''' Common'''
 
@@ -56,27 +68,27 @@ def add_to_database():
 
     subreddit = reddit.subreddit(entry_name.get())
 
+    logger.info(f'Connected to Reddit')
+
     for submission in subreddit.hot(limit=5):
         title = submission.title
         score = submission.score
         sub_id = submission.id
-        print(sub_id)
         url = submission.url
         submission_input = Reddid_Class(title, score, sub_id, url)
         database_sub_ids = pull_from_database_for_id()
-        print(database_sub_ids)
         sub_id_converted = reddit_sub_id_convert_to_database_string(sub_id)
         database_sub_ids_normalised = []
         for element in database_sub_ids:
             database_sub_ids_normalised.append(str(element))
         if sub_id_converted not in database_sub_ids_normalised:
-            print('Not in database, adding')
             session.add(submission_input)
             session.commit()
             box.delete(0, 'end')
             box.insert(END, *pull_from_database())
+            logger.info(f'Submission {sub_id} added to the database')
         else:
-            print('In database, skipping')
+            logger.info(f'Submission {sub_id} skipped. Already in the database')
 
 
 def pull_from_database():
@@ -93,6 +105,7 @@ def open_the_url():
     search_string_1 = search_string[2:]
     search_string_2 = search_string_1[:-3]
     webbrowser.open(search_string_2)
+    logger.info(f'submission URL opened: {search_string_2}')
 
 def get_url():
     search_string = str(pull_from_database_for_url()[box.curselection()[0]])
@@ -138,8 +151,6 @@ def get_submission_comments():
     submission = reddit.submission(id=identify())
     for top_level_comment in submission.comments:
         if hasattr(top_level_comment, "body"):
-            # print(top_level_comment.body)
-            # print('--------------------')
             comment_list.append(top_level_comment.body)
 
     root = Tk()
@@ -148,70 +159,50 @@ def get_submission_comments():
     posx = 40
     posy = 20
     root.wm_geometry("%dx%d+%d+%d" % (sizex, sizey, posx, posy))
-    comments_box = Listbox(root,width=600,height=200)
+    comments_box = Listbox(root, width=600, height=200)
     comments_box.pack()
     for items in comment_list:
         comments_box.insert(END, items)
     root.mainloop()
 
-# def open_bot_file():
-#     Popen("commenter.py")
-
-# import os
-#
-# def run_program():
-#     os.system('commenter.py')
 
 def open_bot_file():
     subprocess.call(["python", "commenter.py"])
+    logger.info(f'Bot opened')
 
 ''' GUI '''
 
 main_window = Tk()
 
+logger.info(f'Program opened.')
+
 main_window.title("Reddit register")
-# main_window.geometry('1000x450')
 
 scrollbar = Scrollbar(main_window)
 box = Listbox(main_window, width=100, yscrollcommand=scrollbar.set)
 scrollbar.config(command=box.yview)
 
-# button_frame = Frame(main_window)
-# box = Listbox(main_window, selectmode=SINGLE)
 box.insert(END, *pull_from_database())
 
 
 label_top = Label(main_window, text='Submission database')
 label = Label(main_window, text='Enter subreddit', width=20)
-# label_0 = Label(main_window, text='Commonly used', width=20)
 
 entry_name = Entry(main_window, width=20)
 
 button0 = Button(main_window, text="Enter", command=add_to_database)
 button1 = Button(main_window, text="Open", command=open_the_url)
-button2 = Button(main_window, text="BOT", command=open_bot_file)
-# button3 = Button(main_window, text="URL", command=get_url)
-button4 = Button(main_window, text="Comments", command=get_submission_comments)
+button2 = Button(main_window, text="Comments", command=get_submission_comments)
+button3 = Button(main_window, text="BOT", command=open_bot_file)
 
 ''' Visual '''
 label_top.grid(row=0, column=1, columnspan=3, sticky=W + E)
 label.grid(row=1, column=0)
 entry_name.grid(row=2, column=0)
 button0.grid(row=3, column=0)
-button2.grid(row=4, column=0)
-button1.grid(row=5, column=0)
-# button2.grid(row=6, column=0)
-# button3.grid(row=7, column=0)
-button4.grid(row=8, column=0)
-
-# box.grid(row=0, rowspan=20, column=1, columnspan=10)
-# label.place(x=5, y=5)
-#
-# entry_name.place(x=5, y=25)
-#
-# button0.place(x=5, y=45)
-
-# box.place(x=145, y=5, height=400, width=600)
+button1.grid(row=4, column=0)
+button2.grid(row=5, column=0)
+button3.grid(row=8, column=0)
 
 box.grid(row=1, rowspan=8, column=2)
 

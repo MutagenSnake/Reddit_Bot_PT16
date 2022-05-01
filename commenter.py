@@ -6,6 +6,20 @@ from sqlalchemy.ext.declarative import declarative_base
 import praw
 import time
 import webbrowser
+import pickle
+import logging
+
+''' Logger '''
+
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('Log.log')
+logger.addHandler(file_handler)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+file_handler.setFormatter(formatter)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
 
 ''' Common'''
 
@@ -43,49 +57,22 @@ def pull_bot_comments():
 def pull_comment_url_from_database():
     return session0.query(Reddid_Class_Comments.target_comment_url).all()
 
+def pull_from_database_for_comment_id():
+    return session0.query(Reddid_Class_Comments.target_comment_id).all()
 
-# def initiate_bot_window():
-#     bot_window = Tk()
-#
-#     def open_comment_url():
-#         search_string = str(pull_comment_url_from_database()[box.curselection()[0]])
-#         search_string_1 = search_string[2:]
-#         search_string_2 = search_string_1[:-3]
-#         webbrowser.open(search_string_2)
-#         label_status["text"] = "Web browser opened"
-#
-#     bot_window.title("Reddit bot")
-#     # bot_window.geometry('1000x450')
-#
-#     scrollbar = Scrollbar(bot_window)
-#     box = Listbox(bot_window, width=100, yscrollcommand=scrollbar.set)
-#     scrollbar.config(command=box.yview)
-#
-#     box.insert(END, *pull_bot_comments())
-#
-#     label = Label(bot_window, text='Enter subreddit', width=20)
-#     label_0 = Label(bot_window, text='Commonly used', width=20)
-#     label_status = Label(bot_window, text="Window open")
-#
-#     entry_name = Entry(bot_window, width=20)
-#
-#     button0 = Button(bot_window, text="Initiate", command=make_a_comment)
-#     button1 = Button(bot_window, text="Open", command=open_comment_url)
-#     ''' Visual '''
-#
-#     label.grid(row=0, column=0)
-#     entry_name.grid(row=1, column=0)
-#     button0.grid(row=2, column=0)
-#     label_0.grid(row=3, column=0)
-#     button1.grid(row=4, column=0)
-#     label_status.grid(row=8, columnspan=3, sticky=W+E)
-#
-#
-#     box.grid(row=0, rowspan=6, column=2)
-#
-#     scrollbar.grid(row=0, rowspan=7, column=4, sticky=N + S)
-#
-#     bot_window.mainloop()
+def reddit_comment_id_convert_to_database_string(commnet_id_string):
+    return f"('{commnet_id_string}',)"
+
+def check_if_commented(comment_id):
+    database_comment_ids = pull_from_database_for_comment_id()
+    database_comment_ids_normalised = []
+    sub_id_converted = reddit_comment_id_convert_to_database_string(comment_id)
+    for element in database_comment_ids:
+        database_comment_ids_normalised.append(str(element))
+    if sub_id_converted not in database_comment_ids_normalised:
+        return False
+    else:
+        return True
 
 
 def make_a_comment():
@@ -101,28 +88,52 @@ def make_a_comment():
                          password=password,
                          user_agent=user_agent)
 
+    logger.info(f'Bot connected to Reddit')
+
     subreddit = reddit.subreddit(entry_name.get())
     search_string = reddit.subreddit(entry_search.get())
     comment_string = reddit.subreddit(entry_comment.get())
 
+    try:
+        for submission in subreddit.hot(limit=20):
+            with open('last_comment_time.pkl', 'rb') as f:
+                last_comment_time = pickle.load(f)
+            # last_comment_time = datetime.datetime.now() - datetime.timedelta(days=1)
 
-    for submission in subreddit.hot(limit=10):
-        for top_level_comment in submission.comments:
-            if hasattr(top_level_comment, "body"):
-                comment_search = top_level_comment.body
-                if str(search_string) in comment_search:
-                    comment_body = top_level_comment.body
-                    comment_id = top_level_comment.id
-                    comment_url = top_level_comment.permalink
-                    full_comment_url = f'https://www.reddit.com/{comment_url}'
-                    database_input = Reddid_Class_Comments(comment_body, comment_id, full_comment_url)
-                    session0.add(database_input)
-                    session0.commit()
-                    # comment.reply(comment_string)
-                    box.delete(0, 'end')
-                    box.insert(END, *pull_bot_comments())
-                    label_status["text"] = "Comment posted - timeout 10min"
-                    break
+            if datetime.datetime.now() - last_comment_time > datetime.timedelta(minutes=10):
+                for top_level_comment in submission.comments:
+                    if hasattr(top_level_comment, "body"):
+                        comment_search = top_level_comment.body
+                        if str(search_string) in comment_search:
+                            comment_body = top_level_comment.body
+                            comment_id = top_level_comment.id
+                            comment_url = top_level_comment.permalink
+                            full_comment_url = f'https://www.reddit.com/{comment_url}'
+                            if check_if_commented(comment_id) is True:
+                                print('Already commented, skipping')
+                                label_status["text"] = "Commented already"
+                                break
+                            else:
+                                database_input = Reddid_Class_Comments(comment_body, comment_id, full_comment_url)
+                                session0.add(database_input)
+                                session0.commit()
+                                # comment.reply(comment_string)
+                                logger.info(f'Comment posted. Commented on "{comment_body}", comment id: {comment_id}')
+                                box.delete(0, 'end')
+                                box.insert(END, *pull_bot_comments())
+                                label_status["text"] = "Comment posted - timeout 10min"
+                                time_of_posting = datetime.datetime.now()
+                                f = open("last_comment_time.pkl", "wb")
+                                pickle.dump(time_of_posting, f)
+                                raise StopIteration
+                        else:
+                            label_status["text"] = "Nothing to comment upon"
+
+            else:
+                label_status["text"] = f"Too early. Time since the last comment: {datetime.datetime.now() - last_comment_time}"
+                raise StopIteration
+    except StopIteration:
+        pass
 
 ''' Graphics '''
 
@@ -137,7 +148,6 @@ def open_comment_url():
 
 
 bot_window.title("Reddit bot")
-# bot_window.geometry('1000x450')
 
 scrollbar = Scrollbar(bot_window)
 box = Listbox(bot_window, width=100, yscrollcommand=scrollbar.set)
@@ -149,7 +159,7 @@ label_0 = Label(bot_window, text='Enter subreddit:', width=20)
 label_1 = Label(bot_window, text='Search for:', width=20)
 label_2 = Label(bot_window, text='The comment:', width=20)
 label_status = Label(bot_window, text="Window open")
-label_top = Label(bot_window, text = 'Commented comments')
+label_top = Label(bot_window, text='Commented comments')
 
 entry_name = Entry(bot_window, width=20)
 entry_search = Entry(bot_window, width=20)
@@ -157,6 +167,7 @@ entry_comment = Entry(bot_window, width=20)
 
 button0 = Button(bot_window, text="Initiate", command=make_a_comment)
 button1 = Button(bot_window, text="Open", command=open_comment_url)
+
 ''' Visual '''
 
 label_0.grid(row=0, column=0)
