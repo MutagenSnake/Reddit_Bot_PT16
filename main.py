@@ -173,7 +173,7 @@ def open_bot_file():
 ''' GUI '''
 
 main_window = Tk()
-
+main_window.iconbitmap("icon.ico")
 logger.info(f'Program opened.')
 
 main_window.title("Reddit register")

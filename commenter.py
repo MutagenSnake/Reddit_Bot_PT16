@@ -110,14 +110,13 @@ def make_a_comment():
                             comment_url = top_level_comment.permalink
                             full_comment_url = f'https://www.reddit.com/{comment_url}'
                             if check_if_commented(comment_id) is True:
-                                print('Already commented, skipping')
                                 label_status["text"] = "Commented already"
                                 break
                             else:
                                 database_input = Reddid_Class_Comments(comment_body, comment_id, full_comment_url)
                                 session0.add(database_input)
                                 session0.commit()
-                                # comment.reply(comment_string)
+                                top_level_comment.reply(comment_string)
                                 logger.info(f'Comment posted. Commented on "{comment_body}", comment id: {comment_id}')
                                 box.delete(0, 'end')
                                 box.insert(END, *pull_bot_comments())
@@ -148,6 +147,7 @@ def open_comment_url():
 
 
 bot_window.title("Reddit bot")
+bot_window.iconbitmap("icon.ico")
 
 scrollbar = Scrollbar(bot_window)
 box = Listbox(bot_window, width=100, yscrollcommand=scrollbar.set)
